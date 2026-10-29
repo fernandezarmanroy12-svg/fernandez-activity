@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SwitchGuard — Dead Man's Switch for Scheduled Tasks</title>
+  <meta name="description" content="A lightweight, fail-safe dead man's switch monitoring platform for cron jobs, background workers, backup scripts, and scheduled tasks. Inspired by Healthchecks.io.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⚡</text></svg>">
+</head>
+<body class="dark-theme">
+  <!-- Toast Notification Container -->
+  <div id="toast-container" class="toast-container" aria-live="polite"></div>
+
+  <!-- Header / Navigation -->
+  <header class="app-header">
+    <div class="header-inner">
+      <div class="logo-area">
+        <div class="logo-icon-wrap">
+          <svg class="logo-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M18.36 6.64a9 9 0 1 1-12.73 0"></path>
+            <line x1="12" y1="2" x2="12" y2="12"></line>
+          </svg>
+          <span class="logo-pulse"></span>
+        </div>
+        <div class="brand-text">
+          <div class="brand-title-row">
+            <span class="brand-title">SwitchGuard</span>
+            <span class="brand-tag">DEAD MAN'S SWITCH</span>
+          </div>
+          <span class="brand-subtitle">Zero-Overhead Monitoring for Cron & Background Tasks</span>
+        </div>
+      </div>
+
+      <!-- Live Simulator / Time Machine Controls -->
+      <div class="time-machine-bar" id="time-machine-bar">
+        <div class="tm-status">
+          <span class="tm-clock-icon">🕒</span>
+          <span class="tm-label">Simulated Time:</span>
+          <span id="current-sim-time" class="tm-time">Loading...</span>
+          <span id="time-warp-badge" class="time-warp-badge hidden">+0m</span>
+        </div>
+        <div class="tm-actions">
+          <button class="tm-btn" id="btn-warp-5m" title="Fast forward 5 minutes">+5 min</button>
+          <button class="tm-btn" id="btn-warp-1h" title="Fast forward 1 hour">+1 hour</button>
+          <button class="tm-btn" id="btn-warp-1d" title="Fast forward 1 day">+1 day</button>
+          <button class="tm-btn tm-btn-reset" id="btn-reset-time" title="Reset to real current time">Reset to Now</button>
+        </div>
+      </div>
+
+      <!-- Header Action Controls -->
+      <div class="header-actions">
+        <button id="btn-sound-toggle" class="btn-icon" title="Toggle Audio Alarms">
+          <svg id="icon-sound-on" class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+            <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+          </svg>
+          <svg id="icon-sound-off" class="icon hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+            <line x1="23" y1="9" x2="17" y2="15"></line>
+            <line x1="17" y1="9" x2="23" y2="15"></line>
+          </svg>
+        </button>
+
+        <button id="btn-channels-modal" class="btn-secondary" title="Configure Alert Channels">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+            <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+          </svg>
+          <span>Channels (<span id="active-channels-count">3</span>)</span>
+        </button>
+
+        <button id="btn-new-check" class="btn-primary" title="Create a new Dead Man's Switch">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <line x1="12" y1="5" x2="12" y2="19"></line>
+            <line x1="5" y1="12" x2="19" y2="12"></line>
+          </svg>
+          <span>Add New Check</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Dashboard Wrapper -->
+  <main class="dashboard-main">
+    <!-- Dead Man's Switch Concept Explainer Ribbon -->
+    <section class="concept-banner">
+      <div class="concept-content">
+        <div class="concept-badge">💡 HOW DEAD MAN'S SWITCH WORKS</div>
+        <p class="concept-text">
+          Unlike active monitors that probe your server, <strong>SwitchGuard is passive and zero-attack-surface</strong>: your cron job or background script simply pings its unique URL after execution. If SwitchGuard doesn't receive a ping before the deadline + grace period expires, it assumes the task crashed or stalled and immediately triggers the alarm.
+        </p>
+      </div>
+      <div class="concept-stats">
+        <div class="stat-pill operational" id="status-pill-up">
+          <span class="pill-dot"></span>
+          <span class="pill-count" id="count-up">0</span>
+          <span class="pill-label">Operational</span>
+        </div>
+        <div class="stat-pill grace" id="status-pill-grace">
+          <span class="pill-dot"></span>
+          <span class="pill-count" id="count-grace">0</span>
+          <span class="pill-label">In Grace</span>
+        </div>
+        <div class="stat-pill down" id="status-pill-down">
+          <span class="pill-dot"></span>
+          <span class="pill-count" id="count-down">0</span>
+          <span class="pill-label">Alert / Down</span>
+        </div>
+        <div class="stat-pill total">
+          <span class="pill-label">Total:</span>
+          <strong id="count-total">0</strong>
+        </div>
+      </div>
+    </section>
+
+    <!-- Toolbar: Search, Filter Tabs, Tag Pills, View Toggle -->
+    <section class="toolbar-section">
+      <div class="search-filter-row">
+        <!-- Search Input -->
+        <div class="search-input-wrap">
+          <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          </svg>
+          <input type="text" id="search-input" placeholder="Search by task name, tag, or UUID..." autocomplete="off">
+          <button id="search-clear-btn" class="search-clear-btn hidden">&times;</button>
+        </div>
+
+        <!-- Filter Tabs -->
+        <div class="status-filter-tabs" role="tablist">
+          <button class="tab-btn active" data-filter="all" id="tab-all">All (<span id="tab-count-all">0</span>)</button>
+          <button class="tab-btn" data-filter="up" id="tab-up">Up (<span id="tab-count-up">0</span>)</button>
+          <button class="tab-btn" data-filter="grace" id="tab-grace">Grace (<span id="tab-count-grace">0</span>)</button>
+          <button class="tab-btn" data-filter="down" id="tab-down">Down (<span id="tab-count-down">0</span>)</button>
+          <button class="tab-btn" data-filter="paused" id="tab-paused">Paused (<span id="tab-count-paused">0</span>)</button>
+        </div>
+
+        <!-- Simulator & Tool Actions -->
+        <div class="extra-actions">
+          <button id="btn-quick-ping-all" class="btn-ghost" title="Simulate a successful ping for all active checks">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="23 4 23 10 17 10"></polyline>
+              <polyline points="1 20 1 14 7 14"></polyline>
+              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+            </svg>
+            <span>Ping All</span>
+          </button>
+          <button id="btn-reset-demo" class="btn-ghost" title="Reset to default showcase checks">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path>
+              <path d="M3 3v5h5"></path>
+            </svg>
+            <span>Reset Demo</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Tag Filtering Bar -->
+      <div class="tag-filter-bar" id="tag-filter-bar">
+        <span class="tag-bar-label">Tags:</span>
+        <div class="tag-chips-list" id="tag-chips-container">
+          <!-- Dynamically populated tags -->
+        </div>
+      </div>
+    </section>
+
+    <!-- Checks Grid / List Container -->
+    <section class="checks-section">
+      <div class="table-header-row">
+        <div class="col-status">Status</div>
+        <div class="col-info">Task Name & Details</div>
+        <div class="col-schedule">Schedule & Grace</div>
+        <div class="col-lastping">Last Ping</div>
+        <div class="col-countdown">Dead Man's Switch</div>
+        <div class="col-timeline">Recent 20 Runs</div>
+        <div class="col-actions">Actions</div>
+      </div>
+
+      <div id="checks-list" class="checks-list">
+        <!-- Rendered dynamically by app.js -->
+      </div>
+
+      <!-- Empty State -->
+      <div id="empty-state" class="empty-state hidden">
+        <div class="empty-icon">🔍</div>
+        <h3>No Monitored Checks Found</h3>
+        <p>No checks match your current filter or search criteria.</p>
+        <button id="btn-empty-clear" class="btn-secondary">Clear Filters</button>
+      </div>
+    </section>
+
+    <!-- Global Activity Log & Dead Man's Switch Tripped Alerts -->
+    <section class="system-logs-section">
+      <div class="section-header-row">
+        <div class="section-title-wrap">
+          <span class="section-icon">📡</span>
+          <h3>Live Telemetry & Ping Feed</h3>
+          <span class="live-dot-pulse"></span>
+        </div>
+        <div class="feed-actions">
+          <button id="btn-clear-feed" class="btn-link">Clear Feed</button>
+        </div>
+      </div>
+      <div class="terminal-feed-container">
+        <div id="live-telemetry-feed" class="telemetry-feed">
+          <!-- Dynamically appended ping logs -->
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- ======================= MODALS ======================= -->
+
+  <!-- Modal: Add / Edit Check -->
+  <div id="modal-check" class="modal-backdrop hidden">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <div class="modal-title-wrap">
+          <span class="modal-icon" id="modal-check-icon">➕</span>
+          <h2 id="modal-check-title">Add New Dead Man's Switch</h2>
+        </div>
+        <button class="modal-close-btn" data-close-modal>&times;</button>
+      </div>
+
+      <form id="form-check" class="modal-form">
+        <input type="hidden" id="input-check-id">
+
+        <div class="form-group">
+          <label for="input-check-name">Task Name <span class="required">*</span></label>
+          <input type="text" id="input-check-name" placeholder="e.g. Postgres Nightly Backup to S3" required>
+          <span class="form-hint">A clear identifier for the scheduled task being monitored.</span>
+        </div>
+
+        <div class="form-group">
+          <label for="input-check-desc">Description</label>
+          <input type="text" id="input-check-desc" placeholder="e.g. Runs pg_dumpall, encrypts and uploads to AWS S3 bucket">
+        </div>
+
+        <div class="form-group">
+          <label for="input-check-tags">Tags (comma-separated)</label>
+          <input type="text" id="input-check-tags" placeholder="e.g. database, backup, aws, production">
+          <span class="form-hint">Used for grouping, searching, and filtering.</span>
+        </div>
+
+        <div class="form-row-2col">
+          <!-- Period (Expected frequency) -->
+          <div class="form-group">
+            <label for="input-check-period">Expected Period <span class="required">*</span></label>
+            <div class="custom-select-wrap">
+              <select id="input-check-period" required>
+                <option value="60">Every 1 minute (Fast test)</option>
+                <option value="300">Every 5 minutes</option>
+                <option value="900">Every 15 minutes</option>
+                <option value="1800">Every 30 minutes</option>
+                <option value="3600">Every 1 hour</option>
+                <option value="21600">Every 6 hours</option>
+                <option value="43200">Every 12 hours</option>
+                <option value="86400" selected>Every 24 hours (Daily)</option>
+                <option value="604800">Every 7 days (Weekly)</option>
+                <option value="custom">Custom (Seconds)</option>
+              </select>
+            </div>
+            <div id="custom-period-wrap" class="hidden custom-input-margin">
+              <input type="number" id="input-custom-period" min="10" placeholder="Seconds (e.g. 120)">
+            </div>
+            <span class="form-hint">How often this task normally executes.</span>
+          </div>
+
+          <!-- Grace Period -->
+          <div class="form-group">
+            <label for="input-check-grace">Grace Time <span class="required">*</span></label>
+            <div class="custom-select-wrap">
+              <select id="input-check-grace" required>
+                <option value="60">1 minute</option>
+                <option value="300">5 minutes</option>
+                <option value="900" selected>15 minutes</option>
+                <option value="1800">30 minutes</option>
+                <option value="3600">1 hour</option>
+                <option value="7200">2 hours</option>
+                <option value="86400">1 day</option>
+                <option value="custom">Custom (Seconds)</option>
+              </select>
+            </div>
+            <div id="custom-grace-wrap" class="hidden custom-input-margin">
+              <input type="number" id="input-custom-grace" min="10" placeholder="Grace Seconds (e.g. 600)">
+            </div>
+            <span class="form-hint">Buffer time after expected run before alarm sounds.</span>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>Alert Channels</label>
+          <div class="channels-checkbox-group">
+            <label class="channel-check-item">
+              <input type="checkbox" id="check-chan-email" checked>
+              <span>📧 Primary Ops Email</span>
+            </label>
+            <label class="channel-check-item">
+              <input type="checkbox" id="check-chan-slack" checked>
+              <span>💬 #infra-alerts (Slack)</span>
+            </label>
+            <label class="channel-check-item">
+              <input type="checkbox" id="check-chan-discord" checked>
+              <span>🎮 Server Alerts (Discord)</span>
+            </label>
+            <label class="channel-check-item">
+              <input type="checkbox" id="check-chan-pagerduty">
+              <span>🚨 PagerDuty Escalation</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" class="btn-secondary" data-close-modal>Cancel</button>
+          <button type="submit" class="btn-primary" id="btn-save-check">Save Check</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Integration Guide & Code Generator -->
+  <div id="modal-integration" class="modal-backdrop hidden">
+    <div class="modal-dialog modal-dialog-lg">
+      <div class="modal-header">
+        <div class="modal-title-wrap">
+          <span class="modal-icon">⚡</span>
+          <div>
+            <h2 id="modal-integ-name">Task Integration Guide</h2>
+            <p class="modal-subtitle">Ready-to-use snippets for your crontab, scripts, and containers</p>
+          </div>
+        </div>
+        <button class="modal-close-btn" data-close-modal>&times;</button>
+      </div>
+
+      <div class="modal-body-scroll">
+        <!-- Endpoint Box -->
+        <div class="ping-endpoint-box">
+          <div class="endpoint-label">YOUR DEAD MAN'S SWITCH PING URL</div>
+          <div class="endpoint-url-row">
+            <code id="integ-ping-url" class="endpoint-code">http://localhost/track/ping.html?uuid=...</code>
+            <button id="btn-copy-url" class="btn-copy">
+              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+              </svg>
+              <span>Copy</span>
+            </button>
+          </div>
+          <div class="endpoint-subtext">
+            <span>💡 <strong>Supported endpoints:</strong></span>
+            <code>...&action=success</code> (default) &bull;
+            <code>...&action=start</code> (measure execution time) &bull;
+            <code>...&action=fail</code> (signal script crash)
+          </div>
+        </div>
+
+        <!-- Language Code Tabs -->
+        <div class="code-tabs-header">
+          <button class="code-tab active" data-lang="bash">cURL / Bash</button>
+          <button class="code-tab" data-lang="python">Python</button>
+          <button class="code-tab" data-lang="powershell">PowerShell</button>
+          <button class="code-tab" data-lang="node">Node.js</button>
+          <button class="code-tab" data-lang="cron">Crontab</button>
+          <button class="code-tab" data-lang="docker">Docker</button>
+        </div>
+
+        <div class="code-tab-content-wrap">
+          <div class="code-actions-top">
+            <span id="code-snippet-desc" class="code-desc">Simple exit-code based ping in Bash</span>
+            <button id="btn-copy-code" class="btn-copy-code">Copy Snippet</button>
+          </div>
+          <pre><code id="code-snippet-display" class="code-block language-bash"></code></pre>
+        </div>
+
+        <!-- Interactive Sandbox Inside Modal -->
+        <div class="sandbox-box">
+          <h4>🧪 Test Switch In-Browser</h4>
+          <p>You can send test signals to this switch immediately to see how SwitchGuard responds:</p>
+          <div class="sandbox-buttons">
+            <button id="btn-sandbox-success" class="btn-action-success">
+              <span>🟢</span> Send Success Ping
+            </button>
+            <button id="btn-sandbox-start" class="btn-action-start">
+              <span>⏱️</span> Send /start Signal
+            </button>
+            <button id="btn-sandbox-fail" class="btn-action-fail">
+              <span>❌</span> Send /fail Signal
+            </button>
+            <button id="btn-sandbox-force-down" class="btn-action-down">
+              <span>🚨</span> Trip Dead Man's Switch Now
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn-primary" data-close-modal>Done</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Ping History Logs Inspector -->
+  <div id="modal-logs" class="modal-backdrop hidden">
+    <div class="modal-dialog modal-dialog-lg">
+      <div class="modal-header">
+        <div class="modal-title-wrap">
+          <span class="modal-icon">📜</span>
+          <div>
+            <h2 id="modal-logs-name">Execution Logs & Ping History</h2>
+            <p class="modal-subtitle">Full audit trail of pings, durations, and output payloads</p>
+          </div>
+        </div>
+        <button class="modal-close-btn" data-close-modal>&times;</button>
+      </div>
+
+      <div class="modal-body-scroll">
+        <div class="logs-summary-bar">
+          <div class="log-stat">
+            <span class="lbl">Total Recorded Pings</span>
+            <span class="val" id="log-stat-count">0</span>
+          </div>
+          <div class="log-stat">
+            <span class="lbl">Last Recorded Status</span>
+            <span class="val" id="log-stat-last-status">UP</span>
+          </div>
+          <div class="log-stat">
+            <span class="lbl">Average Duration</span>
+            <span class="val" id="log-stat-avg-duration">0s</span>
+          </div>
+          <div class="log-stat">
+            <span class="lbl">Failures / Timeouts</span>
+            <span class="val red" id="log-stat-failures">0</span>
+          </div>
+        </div>
+
+        <div class="table-container">
+          <table class="logs-table">
+            <thead>
+              <tr>
+                <th>Time (Simulated)</th>
+                <th>Type / Signal</th>
+                <th>Duration</th>
+                <th>Source</th>
+                <th>Payload / Stderr Snippet</th>
+              </tr>
+            </thead>
+            <tbody id="logs-table-body">
+              <!-- Logs populated dynamically -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn-secondary" id="btn-clear-task-logs">Clear Logs</button>
+        <button type="button" class="btn-primary" data-close-modal>Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Alert Channels Manager -->
+  <div id="modal-channels" class="modal-backdrop hidden">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <div class="modal-title-wrap">
+          <span class="modal-icon">📢</span>
+          <div>
+            <h2>Alert Channels</h2>
+            <p class="modal-subtitle">Where SwitchGuard sends notifications when a switch is tripped</p>
+          </div>
+        </div>
+        <button class="modal-close-btn" data-close-modal>&times;</button>
+      </div>
+
+      <div class="modal-body-scroll">
+        <div class="channel-card">
+          <div class="chan-icon">📧</div>
+          <div class="chan-info">
+            <div class="chan-title">Email Notification</div>
+            <div class="chan-desc">Sends immediate alerts to <code>ops-team@company.internal</code></div>
+          </div>
+          <div class="chan-status enabled">Enabled</div>
+          <button class="btn-channel-test" data-test="email">Test</button>
+        </div>
+
+        <div class="channel-card">
+          <div class="chan-icon">💬</div>
+          <div class="chan-info">
+            <div class="chan-title">Slack Webhook</div>
+            <div class="chan-desc">Posting to <code>#infrastructure-alerts</code></div>
+          </div>
+          <div class="chan-status enabled">Enabled</div>
+          <button class="btn-channel-test" data-test="slack">Test</button>
+        </div>
+
+        <div class="channel-card">
+          <div class="chan-icon">🎮</div>
+          <div class="chan-info">
+            <div class="chan-title">Discord Webhook</div>
+            <div class="chan-desc">Posting embed to <code>#server-monitoring</code></div>
+          </div>
+          <div class="chan-status enabled">Enabled</div>
+          <button class="btn-channel-test" data-test="discord">Test</button>
+        </div>
+
+        <div class="channel-card">
+          <div class="chan-icon">🚨</div>
+          <div class="chan-info">
+            <div class="chan-title">PagerDuty Escalation</div>
+            <div class="chan-desc">Triggers High-Urgency incident on escalation policy</div>
+          </div>
+          <div class="chan-status disabled">Standby</div>
+          <button class="btn-channel-test" data-test="pagerduty">Test</button>
+        </div>
+
+        <div class="channel-card">
+          <div class="chan-icon">🌐</div>
+          <div class="chan-info">
+            <div class="chan-title">Custom HTTP Webhook</div>
+            <div class="chan-desc">POST JSON payload to any REST endpoint</div>
+          </div>
+          <div class="chan-status enabled">Enabled</div>
+          <button class="btn-channel-test" data-test="webhook">Test</button>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn-primary" data-close-modal>Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Audio Tone Synthesizer & Main Script -->
+  <script src="app.js"></script>
+</body>
+</html>

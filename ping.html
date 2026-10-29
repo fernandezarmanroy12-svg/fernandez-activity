@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SwitchGuard Ping Endpoint</title>
+  <style>
+    body {
+      background-color: #090d16;
+      color: #f8fafc;
+      font-family: 'JetBrains Mono', Consolas, monospace;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      margin: 0;
+      padding: 1.5rem;
+    }
+    .card {
+      background: #0f172a;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 12px;
+      padding: 2rem;
+      max-width: 520px;
+      width: 100%;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+    }
+    .badge {
+      display: inline-block;
+      padding: 0.25rem 0.6rem;
+      border-radius: 4px;
+      font-size: 0.8rem;
+      font-weight: bold;
+      text-transform: uppercase;
+      margin-bottom: 1rem;
+    }
+    .badge-ok { background: rgba(16, 185, 129, 0.15); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.3); }
+    .badge-start { background: rgba(6, 182, 212, 0.15); color: #06b6d4; border: 1px solid rgba(6, 182, 212, 0.3); }
+    .badge-fail { background: rgba(239, 68, 68, 0.15); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.3); }
+    .badge-err { background: rgba(245, 158, 11, 0.15); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.3); }
+    h1 { font-size: 1.25rem; margin: 0 0 0.5rem 0; }
+    p { font-size: 0.88rem; color: #94a3b8; line-height: 1.5; margin: 0 0 1rem 0; }
+    .details {
+      background: #060911;
+      padding: 1rem;
+      border-radius: 6px;
+      font-size: 0.8rem;
+      color: #cbd5e1;
+      margin-bottom: 1.5rem;
+    }
+    .details-row { display: flex; justify-content: space-between; margin-bottom: 0.35rem; }
+    .details-row:last-child { margin-bottom: 0; }
+    .btn {
+      display: inline-block;
+      background: #2563eb;
+      color: #fff;
+      text-decoration: none;
+      padding: 0.6rem 1.2rem;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+    .btn:hover { background: #3b82f6; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div id="status-badge" class="badge badge-ok">Processing...</div>
+    <h1 id="status-title">Dead Man's Switch Receiver</h1>
+    <p id="status-desc">Recording ping from scheduled task...</p>
+
+    <div class="details">
+      <div class="details-row"><span>Status:</span> <strong id="val-status">OK 200</strong></div>
+      <div class="details-row"><span>UUID:</span> <span id="val-uuid">—</span></div>
+      <div class="details-row"><span>Action:</span> <span id="val-action">success</span></div>
+      <div class="details-row"><span>Matched Task:</span> <span id="val-task">—</span></div>
+      <div class="details-row"><span>Timestamp:</span> <span id="val-time">—</span></div>
+    </div>
+
+    <a href="index.html" class="btn">&larr; Return to SwitchGuard Dashboard</a>
+  </div>
+
+  <script>
+    (function() {
+      const STORAGE_KEY = 'switchguard_checks_v1';
+      const params = new URLSearchParams(window.location.search);
+      const uuid = params.get('uuid');
+      const action = params.get('action') || 'success';
+      const now = Date.now();
+
+      const badgeEl = document.getElementById('status-badge');
+      const titleEl = document.getElementById('status-title');
+      const descEl = document.getElementById('status-desc');
+      const uuidEl = document.getElementById('val-uuid');
+      const actionEl = document.getElementById('val-action');
+      const taskEl = document.getElementById('val-task');
+      const timeEl = document.getElementById('val-time');
+      const statusEl = document.getElementById('val-status');
+
+      uuidEl.textContent = uuid || 'None provided';
+      actionEl.textContent = action;
+      timeEl.textContent = new Date(now).toISOString();
+
+      if (!uuid) {
+        badgeEl.className = 'badge badge-err';
+        badgeEl.textContent = 'BAD REQUEST (400)';
+        statusEl.textContent = '400 Bad Request';
+        titleEl.textContent = 'Missing UUID Parameter';
+        descEl.textContent = 'Please provide a valid ?uuid= parameter in the request query string.';
+        return;
+      }
+
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) {
+          badgeEl.className = 'badge badge-err';
+          badgeEl.textContent = 'DATABASE EMPTY';
+          titleEl.textContent = 'No Checks Initialized';
+          descEl.textContent = 'Open the main SwitchGuard dashboard first to initialize checks.';
+          return;
+        }
+
+        const checks = JSON.parse(raw);
+        const chk = checks.find(c => c.uuid === uuid);
+
+        if (!chk) {
+          badgeEl.className = 'badge badge-err';
+          badgeEl.textContent = 'NOT FOUND (404)';
+          statusEl.textContent = '404 Not Found';
+          titleEl.textContent = 'Unknown Dead Man\'s Switch';
+          descEl.textContent = `No monitored task exists with UUID: ${uuid}`;
+          return;
+        }
+
+        taskEl.textContent = chk.name;
+
+        if (!chk.pings) chk.pings = [];
+
+        if (action === 'start') {
+          chk.status = 'started';
+          chk.startedAt = now;
+          chk.pings.unshift({
+            timestamp: now,
+            type: 'start',
+            duration: 'running...',
+            remoteIp: 'remote.http.client',
+            payload: 'HTTP /start signal received'
+          });
+          badgeEl.className = 'badge badge-start';
+          badgeEl.textContent = 'TASK STARTED (200)';
+          titleEl.textContent = 'Job In Progress';
+          descEl.textContent = `Signal logged. Task duration tracking active for "${chk.name}".`;
+        } else if (action === 'fail') {
+          chk.status = 'down';
+          const dur = chk.startedAt ? ((now - chk.startedAt) / 1000).toFixed(1) + 's' : '0s';
+          chk.startedAt = null;
+          chk.pings.unshift({
+            timestamp: now,
+            type: 'fail',
+            duration: dur,
+            remoteIp: 'remote.http.client',
+            payload: 'HTTP /fail signal received (job crashed)'
+          });
+          badgeEl.className = 'badge badge-fail';
+          badgeEl.textContent = 'FAILURE REGISTERED (200)';
+          titleEl.textContent = 'Task Failed';
+          descEl.textContent = `Failure signal received for "${chk.name}". Alarm triggered.`;
+        } else {
+          // Success Ping
+          const dur = chk.startedAt ? ((now - chk.startedAt) / 1000).toFixed(1) + 's' : '0.2s';
+          chk.status = 'up';
+          chk.lastPing = now;
+          chk.startedAt = null;
+          chk.pings.unshift({
+            timestamp: now,
+            type: 'success',
+            duration: dur,
+            remoteIp: 'remote.http.client',
+            payload: 'HTTP 200 OK Ping received'
+          });
+          badgeEl.className = 'badge badge-ok';
+          badgeEl.textContent = 'PING OK (200)';
+          titleEl.textContent = 'Dead Man\'s Switch Alive';
+          descEl.textContent = `Success ping registered for "${chk.name}". Timer has been reset!`;
+        }
+
+        if (chk.pings.length > 30) chk.pings.pop();
+
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(checks));
+      } catch (err) {
+        badgeEl.className = 'badge badge-err';
+        badgeEl.textContent = 'ERROR (500)';
+        statusEl.textContent = '500 Internal Error';
+        titleEl.textContent = 'Failed to Process Ping';
+        descEl.textContent = err.message;
+      }
+    })();
+  </script>
+</body>
+</html>
